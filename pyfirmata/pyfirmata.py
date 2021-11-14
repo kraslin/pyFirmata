@@ -1,6 +1,7 @@
 from __future__ import division, unicode_literals
 
 import inspect
+import socket
 import time
 
 import serial
@@ -100,6 +101,18 @@ class SerialConnection(Connection):
         return self.sp.write(what)
 
 
+class SocketConnection(Connection):
+    def __init__(self, port):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        parts = port.replace('tcp://', '').split(':')
+        print("FIRMATA CONNECT: {}:{}".format(parts[0],int(parts[1])))
+        self.sock.connect((parts[0], int(parts[1])))
+
+    def write(self, what):
+        self.sock.sendall(what)
+
+
 class Board(object):
     """The Base class for any board."""
     firmata_version = None
@@ -111,8 +124,11 @@ class Board(object):
     _parsing_sysex = False
 
     def __init__(self, port, layout=None, baudrate=57600, name=None, timeout=None):
+        # To support Firmata over a network, I expect 'tcp://[ip]:[port]'
         if port.startswith('tcp://'):
-            raise ValueError("We do not TCP yet!")
+            self.conn = SocketConnection(port)
+
+        # Otherwise do as we always did
         else:
             self.conn = SerialConnection(port, baudrate, timeout=timeout)
 
