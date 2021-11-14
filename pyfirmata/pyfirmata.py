@@ -75,6 +75,31 @@ class NoInputWarning(RuntimeWarning):
     pass
 
 
+class Connection(object):
+    """In a sane world this would be an interface. Hai Python!"""
+    def __init__(self):
+        self.what = 'foo'
+
+    def bytes_available(self):
+        return 0
+
+    def write(self, what):
+        raise ValueError("I don't do anything yet")
+
+
+class SerialConnection(Connection):
+    """This is a serial connection to an Arduino running Firmata.
+    I just copied and pasted the existing "communication" code here."""
+    def __init__(self, port, layout=None, baudrate=57600, name=None, timeout=None):
+        self.sp = serial.Serial(port, baudrate, timeout=timeout)
+
+    def bytes_available(self):
+        self.sp.inWaiting()
+
+    def write(self, what):
+        return self.sp.write(what)
+
+
 class Board(object):
     """The Base class for any board."""
     firmata_version = None
@@ -86,7 +111,11 @@ class Board(object):
     _parsing_sysex = False
 
     def __init__(self, port, layout=None, baudrate=57600, name=None, timeout=None):
-        self.sp = serial.Serial(port, baudrate, timeout=timeout)
+        if port.startswith('tcp://'):
+            raise ValueError("We do not TCP yet!")
+        else:
+            self.conn = SerialConnection(port, baudrate, timeout=timeout)
+
         # Allow 5 secs for Arduino's auto-reset to happen
         # Alas, Firmata blinks its version before printing it to serial
         # For 2.3, even 5 seconds might not be enough.
@@ -257,7 +286,7 @@ class Board(object):
         self.sp.write(msg)
 
     def bytes_available(self):
-        return self.sp.inWaiting()
+        return self.conn.bytes_available()
 
     def iterate(self):
         """
@@ -472,7 +501,7 @@ class Pin(object):
 
         # Set mode with SET_PIN_MODE message
         self._mode = mode
-        self.board.sp.write(bytearray([SET_PIN_MODE, self.pin_number, mode]))
+        self.board.conn.write(bytearray([SET_PIN_MODE, self.pin_number, mode]))
         if mode == INPUT:
             self.enable_reporting()
 
@@ -542,8 +571,8 @@ class Pin(object):
             elif self.mode is PWM:
                 value = int(round(value * 255))
                 msg = bytearray([ANALOG_MESSAGE + self.pin_number, value % 128, value >> 7])
-                self.board.sp.write(msg)
+                self.board.conn.write(msg)
             elif self.mode is SERVO:
                 value = int(value)
                 msg = bytearray([ANALOG_MESSAGE + self.pin_number, value % 128, value >> 7])
-                self.board.sp.write(msg)
+                self.board.conn.write(msg)
